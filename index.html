@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Estante — Explorador de Livros</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['"Playfair Display"', 'Georgia', 'serif'],
+            body:    ['"Source Sans 3"', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            ink:     '#0d1b2a',
+            page:    '#f5f0e8',
+            amber:   '#d4a853',
+            amberdim:'#a07830',
+            shelf:   '#1a2e42',
+            muted:   '#8a9bb0',
+            dusty:   '#c8bfaf',
+          },
+        },
+      },
+    }
+  </script>
+
+  <style>
+    body { background-color: #0d1b2a; font-family: 'Source Sans 3', sans-serif; }
+
+    /* Proporção de capa de livro */
+    .book-cover { aspect-ratio: 2/3; object-fit: cover; }
+
+    /* Animação de hover no card */
+    .book-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .book-card:hover { transform: translateY(-5px); box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+
+    /* Modal escondido por padrão */
+    #modal-overlay { display: none; }
+    #modal-overlay.active { display: flex; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: #0d1b2a; }
+    ::-webkit-scrollbar-thumb { background: #d4a853; border-radius: 3px; }
+  </style>
+</head>
+
+<body class="min-h-screen text-white">
+
+  <!-- HEADER -->
+  <header class="sticky top-0 z-40 bg-ink/95 backdrop-blur border-b border-shelf">
+    <div class="max-w-5xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center gap-3">
+
+      <span class="font-display text-xl text-white shrink-0">📚 Estante</span>
+
+      <div class="flex flex-1 gap-2 w-full">
+        <input
+          id="search-input"
+          type="text"
+          placeholder="Título, autor ou assunto…"
+          class="flex-1 bg-shelf border border-shelf focus:border-amber rounded-lg px-4 py-2.5 text-white placeholder-muted text-sm focus:outline-none transition"
+        />
+        <button
+          id="search-btn"
+          class="bg-amber hover:bg-amberdim text-ink font-semibold text-sm px-5 py-2.5 rounded-lg transition shrink-0"
+        >
+          Buscar
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="max-w-5xl mx-auto px-4 pt-10 pb-8">
+    <p class="text-amber text-xs tracking-widest uppercase mb-2">Open Library · Acervo livre</p>
+    <h1 class="font-display text-4xl sm:text-5xl text-white leading-tight mb-4">
+      Milhões de livros,<br/>
+      <em class="text-amber not-italic">uma busca.</em>
+    </h1>
+    <p class="text-muted text-base max-w-lg mb-6">
+      Explore o acervo aberto da Open Library. Clique em qualquer livro para ver mais detalhes.
+    </p>
+
+    <!-- Buscas rápidas -->
+    <div class="flex flex-wrap gap-2">
+      <span class="text-muted text-xs self-center">Explorar:</span>
+      <button class="quick-btn text-xs px-3 py-1.5 rounded-full border border-shelf text-dusty hover:border-amber hover:text-amber transition" data-q="Machado de Assis">Machado de Assis</button>
+      <button class="quick-btn text-xs px-3 py-1.5 rounded-full border border-shelf text-dusty hover:border-amber hover:text-amber transition" data-q="Clarice Lispector">Clarice Lispector</button>
+      <button class="quick-btn text-xs px-3 py-1.5 rounded-full border border-shelf text-dusty hover:border-amber hover:text-amber transition" data-q="Gabriel Garcia Marquez">García Márquez</button>
+      <button class="quick-btn text-xs px-3 py-1.5 rounded-full border border-shelf text-dusty hover:border-amber hover:text-amber transition" data-q="science fiction">Ficção Científica</button>
+      <button class="quick-btn text-xs px-3 py-1.5 rounded-full border border-shelf text-dusty hover:border-amber hover:text-amber transition" data-q="philosophy">Filosofia</button>
+    </div>
+  </section>
+
+  <!-- ÁREA PRINCIPAL -->
+  <main class="max-w-5xl mx-auto px-4 pb-20">
+
+    <!-- Título da prateleira -->
+    <div class="flex items-center gap-3 mb-6">
+      <h2 id="shelf-label" class="font-display text-lg text-white italic">Ficção · destaques</h2>
+      <div class="flex-1 h-px bg-shelf"></div>
+      <span id="results-count" class="text-muted text-xs"></span>
+    </div>
+
+    <!-- Estado: carregando -->
+    <div id="loading" class="text-center py-20">
+      <p class="text-amber text-sm animate-pulse">Carregando livros…</p>
+    </div>
+
+    <!-- Estado: erro -->
+    <div id="error" class="hidden text-center py-20">
+      <p class="font-display text-white text-xl italic mb-2" id="error-msg">Nenhum resultado encontrado.</p>
+      <button id="retry-btn" class="mt-4 bg-amber hover:bg-amberdim text-ink font-semibold text-sm px-5 py-2.5 rounded-lg transition">
+        Tentar novamente
+      </button>
+    </div>
+
+    <!-- Grid de livros -->
+    <div id="book-grid" class="hidden grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5"></div>
+
+    <!-- Paginação -->
+    <div id="pagination" class="hidden flex justify-center items-center gap-6 mt-12">
+      <button id="prev-btn" class="text-sm text-amber hover:text-amberdim disabled:text-shelf disabled:cursor-not-allowed transition">
+        ← Anterior
+      </button>
+      <span id="page-info" class="text-muted text-sm"></span>
+      <button id="next-btn" class="text-sm text-amber hover:text-amberdim disabled:text-shelf disabled:cursor-not-allowed transition">
+        Próximo →
+      </button>
+    </div>
+
+  </main>
+
+  <!-- MODAL -->
+  <div id="modal-overlay" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm items-end sm:items-center justify-center p-0 sm:p-6">
+    <div id="modal-box" class="bg-page text-ink w-full sm:max-w-lg sm:rounded-2xl max-h-[90vh] overflow-y-auto shadow-2xl relative">
+      <button id="modal-close" class="absolute top-4 right-4 z-10 text-ink/50 hover:text-ink text-2xl leading-none">✕</button>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-shelf py-6">
+    <div class="max-w-5xl mx-auto px-4 text-center">
+      <p class="text-muted text-xs">
+        Dados via <a href="https://openlibrary.org/developers/api" target="_blank" class="text-amber hover:underline">Open Library API</a> · Projeto Acadêmico
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    // ============================================================
+    // VARIÁVEIS GLOBAIS 
+    // ============================================================
+    const BASE_URL   = 'https://openlibrary.org'
+    const COVERS_URL = 'https://covers.openlibrary.org/b/id'
+    const POR_PAGINA = 20
+
+    let buscaAtual    = 'subject:fiction'
+    let paginaAtual   = 1
+    let totalResultados = 0
+
+    // ============================================================
+    // FUNÇÃO AUXILIAR: buscar JSON de uma URL
+    // ============================================================
+    async function buscarJSON(url) {
+      const resposta = await fetch(url)
+
+      if (!resposta.ok) {
+        throw new Error(`Erro HTTP ${resposta.status}`)
+      }
+
+      return resposta.json()
+    }
+
+    // ============================================================
+    // FUNÇÃO: montar o HTML de um card de livro
+    // ============================================================
+    function criarCardHTML(livro) {
+      const titulo  = livro.title || 'Sem título'
+      const autores = (livro.author_name || []).slice(0, 2).join(', ') || 'Autor desconhecido'
+      const ano     = livro.first_publish_year || '—'
+      const capId   = livro.cover_i
+      const chave   = livro.key
+
+      // Decide entre imagem real ou fallback colorido
+      const imagemHTML = capId
+        ? `<img
+             src="${COVERS_URL}/${capId}-M.jpg"
+             alt="Capa de ${titulo}"
+             class="book-cover w-full rounded-t-xl object-cover"
+             loading="lazy"
+             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"
+           />
+           <div class="book-cover w-full rounded-t-xl hidden items-end p-3 bg-shelf">
+             <p class="font-display text-white text-xs italic line-clamp-3">${titulo}</p>
+           </div>`
+        : `<div class="book-cover w-full rounded-t-xl flex items-end p-3 bg-shelf">
+             <p class="font-display text-white text-xs italic line-clamp-3">${titulo}</p>
+           </div>`
+
+      return `
+        <article
+          class="book-card cursor-pointer rounded-xl overflow-hidden bg-shelf group"
+          data-chave="${chave}"
+          data-titulo="${titulo.replace(/"/g, '&quot;')}"
+          data-capid="${capId || ''}"
+        >
+          <div class="relative">
+            ${imagemHTML}
+            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition rounded-t-xl"></div>
+          </div>
+          <div class="p-3 flex flex-col gap-1">
+            <h3 class="font-display text-white text-sm leading-snug line-clamp-2 group-hover:text-amber transition">${titulo}</h3>
+            <p class="text-muted text-xs line-clamp-1">${autores}</p>
+            <p class="text-dusty text-xs">${ano}</p>
+          </div>
+        </article>`
+    }
+
+    // ============================================================
+    // FUNÇÃO: controlar qual estado está visível na tela
+    // ============================================================
+    function mostrarEstado(estado, mensagemErro = '') {
+      document.getElementById('loading').classList.toggle('hidden', estado !== 'carregando')
+      document.getElementById('error').classList.toggle('hidden', estado !== 'erro')
+      document.getElementById('book-grid').classList.toggle('hidden', estado !== 'grid')
+      document.getElementById('pagination').classList.toggle('hidden', estado !== 'grid')
+
+      if (mensagemErro) {
+        document.getElementById('error-msg').textContent = mensagemErro
+      }
+    }
+
+    // ============================================================
+    // FUNÇÃO PRINCIPAL: buscar e exibir livros
+    // ============================================================
+    async function buscarLivros(query, pagina = 1) {
+      mostrarEstado('carregando')
+
+      buscaAtual  = query
+      paginaAtual = pagina
+
+      const offset = (pagina - 1) * POR_PAGINA
+      const url    = `${BASE_URL}/search.json?q=${encodeURIComponent(query)}&limit=${POR_PAGINA}&offset=${offset}&fields=key,title,author_name,first_publish_year,cover_i`
+
+      try {
+        const dados = await buscarJSON(url)
+
+        totalResultados = dados.numFound || 0
+
+        if (!dados.docs || dados.docs.length === 0) {
+          throw new Error(`Nenhum livro encontrado para "${query}"`)
+        }
+
+        // Monta o HTML de todos os cards com map() e join()
+        const grid = document.getElementById('book-grid')
+        grid.innerHTML = dados.docs.map(criarCardHTML).join('')
+
+        // Adiciona evento de clique em cada card
+        grid.querySelectorAll('.book-card').forEach(function(card) {
+          card.addEventListener('click', function() {
+            abrirModal(card.dataset.chave, card.dataset.titulo, card.dataset.capid)
+          })
+        })
+
+        // Atualiza o label da prateleira
+        document.getElementById('shelf-label').textContent = query.startsWith('subject:')
+          ? query.replace('subject:', '') + ' · destaques'
+          : `"${query}"`
+
+        document.getElementById('results-count').textContent =
+          `${totalResultados.toLocaleString('pt-BR')} resultados`
+
+        mostrarEstado('grid')
+        atualizarPaginacao()
+
+      } catch (erro) {
+        mostrarEstado('erro', erro.message)
+      }
+    }
+
+    // ============================================================
+    // FUNÇÃO: abrir modal com detalhes do livro
+    // ============================================================
+    async function abrirModal(chave, titulo, capId) {
+      const overlay = document.getElementById('modal-overlay')
+      const conteudo = document.getElementById('modal-content')
+
+      overlay.classList.add('active')
+
+      // Mostra carregando enquanto busca
+      conteudo.innerHTML = `
+        <div class="flex items-center justify-center py-16">
+          <p class="text-ink/50 text-sm animate-pulse">Carregando detalhes…</p>
+        </div>`
+
+      try {
+        const dados = await buscarJSON(`${BASE_URL}${chave}.json`)
+
+        // A descrição pode vir em dois formatos diferentes
+        let descricao = dados.description
+        if (descricao && typeof descricao === 'object') {
+          descricao = descricao.value
+        }
+        if (descricao && descricao.length > 500) {
+          descricao = descricao.slice(0, 500) + '…'
+        }
+
+        // Pega até 6 assuntos
+        const assuntos = (dados.subjects || []).slice(0, 6)
+
+        const urlCapa = capId ? `${COVERS_URL}/${capId}-L.jpg` : null
+
+        const imagemModal = urlCapa
+          ? `<img src="${urlCapa}" alt="Capa" class="w-28 rounded-lg shadow-lg object-cover" style="aspect-ratio:2/3" onerror="this.style.display='none'"/>`
+          : `<div class="w-28 rounded-lg bg-shelf flex items-end p-2" style="aspect-ratio:2/3">
+               <p class="font-display text-white text-xs italic">${titulo}</p>
+             </div>`
+
+        // Monta o HTML do modal com template literal
+        conteudo.innerHTML = `
+          <div class="p-6">
+            <div class="flex gap-4 mb-5">
+              ${imagemModal}
+              <div class="flex flex-col gap-1 min-w-0">
+                <p class="text-amberdim text-xs uppercase tracking-widest">Open Library</p>
+                <h2 class="font-display text-ink text-xl leading-snug">${titulo}</h2>
+                ${dados.first_publish_date
+                  ? `<p class="text-ink/50 text-sm">Publicado em: ${dados.first_publish_date}</p>`
+                  : ''}
+                <a href="${BASE_URL}${chave}" target="_blank" class="text-amberdim text-xs hover:underline mt-auto">
+                  Ver na Open Library ↗
+                </a>
+              </div>
+            </div>
+
+            ${descricao ? `
+            <div class="mb-4">
+              <h3 class="font-display text-ink font-bold text-base mb-1">Sobre o livro</h3>
+              <p class="text-ink/70 text-sm leading-relaxed">${descricao}</p>
+            </div>` : ''}
+
+            ${assuntos.length ? `
+            <div>
+              <h3 class="font-display text-ink font-bold text-base mb-2">Assuntos</h3>
+              <div class="flex flex-wrap gap-2">
+                ${assuntos.map(function(assunto) {
+                  return `<button
+                    class="text-xs px-3 py-1 rounded-full border border-amber/30 text-amberdim bg-amber/10 hover:bg-amber/20 transition"
+                    onclick="buscarPorAssunto('${assunto.replace(/'/g, "\\'")}')"
+                  >${assunto}</button>`
+                }).join('')}
+              </div>
+            </div>` : ''}
+          </div>`
+
+      } catch (erro) {
+        conteudo.innerHTML = `
+          <div class="p-10 text-center">
+            <p class="text-ink/50 text-sm">${erro.message}</p>
+          </div>`
+      }
+    }
+
+    // ============================================================
+    // FUNÇÃO: buscar por assunto a partir do modal
+    // ============================================================
+    function buscarPorAssunto(assunto) {
+      document.getElementById('modal-overlay').classList.remove('active')
+      document.getElementById('search-input').value = assunto
+      buscarLivros(assunto)
+    }
+
+    // Expõe a função para o onclick inline do HTML gerado
+    window.buscarPorAssunto = buscarPorAssunto
+
+    // ============================================================
+    // FUNÇÃO: atualizar botões de paginação
+    // (Módulo 05 — tópico 7: DOM, tópico 1: variáveis)
+    // ============================================================
+    function atualizarPaginacao() {
+      const totalPaginas = Math.ceil(totalResultados / POR_PAGINA)
+
+      if (totalPaginas <= 1) {
+        document.getElementById('pagination').classList.add('hidden')
+        return
+      }
+
+      document.getElementById('page-info').textContent =
+        `página ${paginaAtual} de ${Math.min(totalPaginas, 500)}`
+
+      document.getElementById('prev-btn').disabled = paginaAtual <= 1
+      document.getElementById('next-btn').disabled = paginaAtual >= Math.min(totalPaginas, 500)
+    }
+
+    // ============================================================
+    // EVENTOS DE USUÁRIO
+    // ============================================================
+
+    // Botão de busca
+    document.getElementById('search-btn').addEventListener('click', function() {
+      const query = document.getElementById('search-input').value.trim()
+      if (query) buscarLivros(query)
+    })
+
+    // Enter no campo de busca
+    document.getElementById('search-input').addEventListener('keydown', function(evento) {
+      if (evento.key === 'Enter') {
+        const query = document.getElementById('search-input').value.trim()
+        if (query) buscarLivros(query)
+      }
+    })
+
+    // Botões de busca rápida
+    document.querySelectorAll('.quick-btn').forEach(function(botao) {
+      botao.addEventListener('click', function() {
+        document.getElementById('search-input').value = botao.dataset.q
+        buscarLivros(botao.dataset.q)
+      })
+    })
+
+    // Botão tentar novamente
+    document.getElementById('retry-btn').addEventListener('click', function() {
+      buscarLivros(buscaAtual, paginaAtual)
+    })
+
+    // Paginação
+    document.getElementById('prev-btn').addEventListener('click', function() {
+      if (paginaAtual > 1) {
+        buscarLivros(buscaAtual, paginaAtual - 1)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+    })
+
+    document.getElementById('next-btn').addEventListener('click', function() {
+      buscarLivros(buscaAtual, paginaAtual + 1)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    })
+
+    // Fechar modal ao clicar no X
+    document.getElementById('modal-close').addEventListener('click', function() {
+      document.getElementById('modal-overlay').classList.remove('active')
+    })
+
+    // Fechar modal ao clicar fora dele
+    document.getElementById('modal-overlay').addEventListener('click', function(evento) {
+      if (evento.target === document.getElementById('modal-overlay')) {
+        document.getElementById('modal-overlay').classList.remove('active')
+      }
+    })
+
+    // Fechar modal com ESC
+    document.addEventListener('keydown', function(evento) {
+      if (evento.key === 'Escape') {
+        document.getElementById('modal-overlay').classList.remove('active')
+      }
+    })
+
+    // ============================================================
+    // INÍCIO: carrega a página com livros de ficção
+    // ============================================================
+    buscarLivros('subject:fiction')
+  </script>
+
+</body>
+</html>
